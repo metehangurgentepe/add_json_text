@@ -136,3 +136,9 @@ input: Aybis
 output: {"description": "Aşağıdaki butona tıklayarak AYBİS modülüne ulaşabilirsiniz.","actionKey": "36b62428"}
 input: Duyuru
 output: {"description": "Aşağıdaki butona tıklayarak tüm duyurulara ulaşabilirsiniz.","actionKey": "36b62429"}
+input: Manisa İçin Acil
+output: {"description": "Manisa İçin Acil Uygulamasını aşağıdaki butona tıklayarak indirebilirsiniz","actionKey": "b6142aa6"}
+input: Çözmer ara
+output: {"description": "Çözmeri aramak için aşağıdaki butona tıklayınız.","actionKey": "18542846"}
+input: maski
+output: {"description": "MASKİ ile ilgili işlemleri buradan yapabilirsiniz","actionKey": "6691eefe"}
