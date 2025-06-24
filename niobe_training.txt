@@ -142,3 +142,9 @@ input: Çözmer ara
 output: {"description": "Çözmeri aramak için aşağıdaki butona tıklayınız.","actionKey": "18542846"}
 input: maski
 output: {"description": "MASKİ ile ilgili işlemleri buradan yapabilirsiniz","actionKey": "6691eefe"}
+input: Askıda fatura
+output: {"description": "Askıda fatura uygulamamız ile ihtiyaç sahibi vatandaşlarımıza destek olabilirsiniz","actionKey": "67f020e5"}
+input: Online Egitim
+output: {"description": "Online eğitim kurslarımıza ulaşmak için aşağıdaki butona tıklayabilirsiniz.","actionKey": "7c06f077"}
+input: test
+output: {"description": "test","actionKey": "0685509d"}

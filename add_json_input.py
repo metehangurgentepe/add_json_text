@@ -3,9 +3,11 @@
 import sys
 import json
 import uuid
-import requests
 from typing import Dict, List, Optional, Union
 from datetime import datetime
+
+# Import Supabase Python library
+from supabase import create_client, Client
 
 try:
     import tkinter as tk
@@ -19,6 +21,9 @@ except ImportError:
 
 SUPABASE_URL = "https://mobil.manisa.bel.tr"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE3MTQ5NzUyMDAsImV4cCI6MTg3Mjc0MTYwMH0.eQqXgsJCuribSyEFPTZ5vP3ibSXtXRmMonaKrHFMZ8Y"
+
+# Initialize Supabase client
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 class NiobeAssistantGUI:
     def __init__(self, root):
@@ -133,68 +138,96 @@ class NiobeAssistantGUI:
     def update_instructions_in_supabase(self):
         """Update the instructions column in ai_log.instructions table"""
         try:
-            headers = {
-                "apikey": SUPABASE_KEY,
-                "Content-Type": "application/json",
-                "Prefer": "return=representation",
-                "Accept-Profile": "ai_log",
-                "Content-Profile": "ai_log"
-            }
+            print("Checking for existing instructions record...")
             
-            # Check if a record exists
-            check_response = requests.get(
-                f"{SUPABASE_URL}/rest/v1/instructions?select=id",
-                headers=headers
-            )
-            
-            data = {"instructions": self.responses}
-            
-            if check_response.status_code == 200 and check_response.json():
-                # Update existing record
-                record_id = check_response.json()[0]['id']
-                response = requests.patch(
-                    f"{SUPABASE_URL}/rest/v1/instructions?id=eq.{record_id}",
-                    headers=headers,
-                    json=data
-                )
-            else:
-                # Insert new record
-                response = requests.post(
-                    f"{SUPABASE_URL}/rest/v1/instructions",
-                    headers=headers,
-                    json=data
-                )
-            
-            if response.status_code in (200, 201, 204):
-                return True, "Instructions updated in Supabase!"
-            else:
-                return False, f"Failed to update instructions: {response.text}"
+            # Try to get existing record from ai_log schema
+            try:
+                # Use schema parameter for ai_log schema
+                check_response = supabase.schema("ai_log").table("instructions").select("id").execute()
+                print(f"Check response: {check_response}")
+                
+                data = {"instructions": self.responses}
+                
+                if check_response.data and len(check_response.data) > 0:
+                    # Update existing record
+                    record_id = check_response.data[0]['id']
+                    print(f"Updating existing record with ID: {record_id}")
+                    response = supabase.schema("ai_log").table("instructions").update(data).eq("id", record_id).execute()
+                else:
+                    # Insert new record
+                    print("Inserting new record")
+                    response = supabase.schema("ai_log").table("instructions").insert(data).execute()
+                
+                print(f"Final response: {response}")
+                
+                if response.data is not None:
+                    return True, "Instructions updated in Supabase!"
+                else:
+                    error_message = f"Failed to update instructions: {response}"
+                    return False, error_message
+                    
+            except Exception as schema_error:
+                print(f"ai_log schema failed: {schema_error}")
+                # Fallback to public schema
+                print("Trying public schema...")
+                
+                check_response = supabase.table("instructions").select("id").execute()
+                print(f"Public schema check response: {check_response}")
+                
+                data = {"instructions": self.responses}
+                
+                if check_response.data and len(check_response.data) > 0:
+                    # Update existing record
+                    record_id = check_response.data[0]['id']
+                    print(f"Updating existing record with ID: {record_id}")
+                    response = supabase.table("instructions").update(data).eq("id", record_id).execute()
+                else:
+                    # Insert new record
+                    print("Inserting new record")
+                    response = supabase.table("instructions").insert(data).execute()
+                
+                print(f"Final response: {response}")
+                
+                if response.data is not None:
+                    return True, "Instructions updated in Supabase (public schema)!"
+                else:
+                    error_message = f"Failed to update instructions: {response}"
+                    return False, error_message
                 
         except Exception as e:
+            print(f"Exception in update_instructions_in_supabase: {str(e)}")
             return False, f"Error updating instructions: {str(e)}"
 
     def create_button_in_supabase(self, button_data):
         """Create a new button record in Supabase"""
         try:
-            headers = {
-                "apikey": SUPABASE_KEY,
-                "Content-Type": "application/json",
-                "Prefer": "return=representation"
-            }
+            print(f"Attempting to create button with Supabase Python library")
+            print(f"Button data: {button_data}")
             
-            response = requests.post(
-                f"{SUPABASE_URL}/rest/v1/button",
-                headers=headers,
-                json=button_data
-            )
+            # Try to insert button using Supabase Python library
+            response = supabase.table("button").insert(button_data).execute()
             
-            if response.status_code in (200, 201):
+            print(f"Response: {response}")
+            
+            if response.data is not None and len(response.data) > 0:
                 return True, "Button created successfully in Supabase!"
             else:
-                return False, f"Failed to create button: {response.text}"
+                error_message = f"Failed to create button: {response}"
+                # Check if it's an RLS error
+                if hasattr(response, 'error') and response.error:
+                    error_str = str(response.error)
+                    if "row-level security" in error_str.lower() or "42501" in error_str:
+                        error_message += "\n\nSUGGESTION: Check Supabase RLS policies for the 'button' table. You may need to:"
+                        error_message += "\n1. Disable RLS on the button table, or"
+                        error_message += "\n2. Create appropriate RLS policies that allow INSERT operations"
+                        error_message += "\n3. Ensure the service role key has proper permissions"
+                return False, error_message
                 
         except Exception as e:
-            return False, f"Error creating button: {str(e)}"
+            error_message = f"Error creating button: {str(e)}"
+            if "row-level security" in str(e).lower() or "42501" in str(e):
+                error_message += "\n\nSUGGESTION: Check Supabase RLS policies for the 'button' table."
+            return False, error_message
 
     def add_response_and_button(self):
         input_text = self.input_text.get().strip()
@@ -287,328 +320,107 @@ class NiobeAssistantGUI:
         
         messagebox.showinfo("Success", success_message)
 
-    def test_all_schemas_and_tables(self):
-        """Test different schemas and table names to find the instructions"""
-        test_configs = [
-            # (schema, table_name, description)
-            ("public", "instructions", "Public schema - instructions table"),
-            ("ai_log", "instructions", "AI_log schema - instructions table"),
-            ("public", "ai_log_instructions", "Public schema - ai_log_instructions table"),
-            ("public", "instruction", "Public schema - instruction table (singular)"),
-            ("ai_log", "instruction", "AI_log schema - instruction table (singular)"),
-        ]
-        
-        results = []
-        
-        for schema, table_name, description in test_configs:
-            try:
-                if schema == "public":
-                    headers = {
-                        "apikey": SUPABASE_KEY,
-                        "Content-Type": "application/json"
-                    }
-                else:
-                    headers = {
-                        "apikey": SUPABASE_KEY,
-                        "Content-Type": "application/json",
-                        "Accept-Profile": schema,
-                        "Content-Profile": schema
-                    }
-                
-                response = requests.get(
-                    f"{SUPABASE_URL}/rest/v1/{table_name}",
-                    headers=headers
-                )
-                
-                result = f"{description}: Status {response.status_code}"
-                if response.status_code == 200:
-                    data = response.json()
-                    result += f" - Found {len(data)} records"
-                    if data:
-                        # Show first record structure
-                        first_record = data[0]
-                        result += f" - Sample keys: {list(first_record.keys())}"
-                else:
-                    result += f" - Error: {response.text[:100]}"
-                    
-                results.append(result)
-                print(result)
-                
-            except Exception as e:
-                result = f"{description}: Exception - {str(e)}"
-                results.append(result)
-                print(result)
-        
-        return "\n".join(results)
-
-    def debug_ai_log_instructions(self):
-        """Debug specifically the ai_log.instructions table with detailed logging"""
-        print("\n=== DEBUGGING AI_LOG.INSTRUCTIONS TABLE ===")
-        
-        # Test with different header combinations
-        test_cases = [
-            {
-                "name": "With Accept-Profile and Content-Profile",
-                "headers": {
-                    "apikey": SUPABASE_KEY,
-                    "Content-Type": "application/json",
-                    "Accept-Profile": "ai_log",
-                    "Content-Profile": "ai_log"
-                }
-            },
-            {
-                "name": "With only Accept-Profile", 
-                "headers": {
-                    "apikey": SUPABASE_KEY,
-                    "Content-Type": "application/json",
-                    "Accept-Profile": "ai_log"
-                }
-            },
-            {
-                "name": "With Authorization header",
-                "headers": {
-                    "Authorization": f"Bearer {SUPABASE_KEY}",
-                    "Content-Type": "application/json",
-                    "Accept-Profile": "ai_log"
-                }
-            },
-            {
-                "name": "Public schema (default)",
-                "headers": {
-                    "apikey": SUPABASE_KEY,
-                    "Content-Type": "application/json"
-                }
-            }
-        ]
-        
-        results = []
-        
-        for case in test_cases:
-            print(f"\n--- Testing: {case['name']} ---")
-            try:
-                # Test the exact URL and headers we're using
-                url = f"{SUPABASE_URL}/rest/v1/instructions"
-                print(f"URL: {url}")
-                print(f"Headers: {case['headers']}")
-                
-                response = requests.get(url, headers=case['headers'])
-                
-                print(f"Status Code: {response.status_code}")
-                print(f"Response Headers: {dict(response.headers)}")
-                print(f"Response Text: {response.text}")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    print(f"Number of records: {len(data)}")
-                    if data:
-                        print(f"First record: {data[0]}")
-                        # Check if instructions column exists
-                        if 'instructions' in data[0]:
-                            instructions_content = data[0]['instructions']
-                            print(f"Instructions content length: {len(str(instructions_content))}")
-                            print(f"Instructions preview: {str(instructions_content)[:200]}...")
-                
-                result = f"{case['name']}: Status {response.status_code}, Records: {len(response.json()) if response.status_code == 200 else 'N/A'}"
-                results.append(result)
-                
-            except Exception as e:
-                error_msg = f"{case['name']}: Exception - {str(e)}"
-                print(error_msg)
-                results.append(error_msg)
-        
-        return "\n".join(results)
-
-    def list_all_tables_in_schema(self):
-        """List all tables in ai_log schema"""
-        print("\n=== LISTING ALL TABLES IN AI_LOG SCHEMA ===")
-        
+    def test_supabase_connection(self):
+        """Test Supabase connection using Python library"""
         try:
-            headers = {
-                "apikey": SUPABASE_KEY,
-                "Content-Type": "application/json",
-                "Accept-Profile": "ai_log"
-            }
+            print("=== TESTING SUPABASE CONNECTION ===")
             
-            # Try to get schema information
-            response = requests.get(
-                f"{SUPABASE_URL}/rest/v1/",
-                headers=headers
-            )
+            # Test basic connection
+            response = supabase.table("button").select("id").limit(1).execute()
             
-            print(f"Schema info response: {response.status_code}")
-            print(f"Response: {response.text}")
+            results = f"Connection test: {'SUCCESS' if response.data is not None else 'FAILED'}\n"
+            results += f"Response: {response}\n\n"
+            
+            # Test instructions table in different schemas
+            results += "=== TESTING INSTRUCTIONS ACCESS ===\n"
+            
+            try:
+                ai_log_response = supabase.schema("ai_log").table("instructions").select("id").limit(1).execute()
+                results += f"ai_log.instructions: {'SUCCESS' if ai_log_response.data is not None else 'FAILED'}\n"
+                if ai_log_response.data:
+                    results += f"Records found: {len(ai_log_response.data)}\n"
+            except Exception as e:
+                results += f"ai_log.instructions: ERROR - {str(e)}\n"
+            
+            try:
+                public_response = supabase.table("instructions").select("id").limit(1).execute()
+                results += f"public.instructions: {'SUCCESS' if public_response.data is not None else 'FAILED'}\n"
+                if public_response.data:
+                    results += f"Records found: {len(public_response.data)}\n"
+            except Exception as e:
+                results += f"public.instructions: ERROR - {str(e)}\n"
+            
+            # Test button table
+            results += "\n=== TESTING BUTTON ACCESS ===\n"
+            try:
+                button_response = supabase.table("button").select("id").limit(1).execute()
+                results += f"public.button: {'SUCCESS' if button_response.data is not None else 'FAILED'}\n"
+                if button_response.data:
+                    results += f"Records found: {len(button_response.data)}\n"
+            except Exception as e:
+                results += f"public.button: ERROR - {str(e)}\n"
+            
+            messagebox.showinfo("Supabase Test Results", results)
+            return results
             
         except Exception as e:
-            print(f"Error listing tables: {str(e)}")
-
-    def try_different_instructions_queries(self):
-        """Try different ways to query the instructions table"""
-        print("\n=== TRYING DIFFERENT INSTRUCTIONS QUERIES ===")
-        
-        queries = [
-            ("No filters", ""),
-            ("Select all columns", "?select=*"),
-            ("Select instructions only", "?select=instructions"),
-            ("Order by id", "?select=*&order=id"),
-            ("Order by created_at desc", "?select=*&order=created_at.desc"),
-            ("Limit 10", "?select=*&limit=10"),
-            ("With count", "?select=*&limit=1"),
-        ]
-        
-        headers = {
-            "apikey": SUPABASE_KEY,
-            "Content-Type": "application/json",
-            "Accept-Profile": "ai_log"
-        }
-        
-        results = []
-        
-        for description, query_params in queries:
-            try:
-                url = f"{SUPABASE_URL}/rest/v1/instructions{query_params}"
-                print(f"\n--- {description} ---")
-                print(f"URL: {url}")
-                
-                response = requests.get(url, headers=headers)
-                print(f"Status: {response.status_code}")
-                print(f"Response: {response.text}")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    result = f"{description}: {len(data)} records"
-                    if data:
-                        result += f" - Sample: {str(data[0])[:100]}..."
-                else:
-                    result = f"{description}: Error {response.status_code}"
-                
-                results.append(result)
-                
-            except Exception as e:
-                error_msg = f"{description}: Exception - {str(e)}"
-                print(error_msg)
-                results.append(error_msg)
-        
-        return results
-
-    def test_supabase_connection(self):
-        """Test Supabase connection and check table structure"""
-        print("=== TESTING ALL POSSIBLE SCHEMAS AND TABLES ===")
-        all_results = self.test_all_schemas_and_tables()
-        
-        print("\n=== LISTING TABLES ===")
-        self.list_all_tables_in_schema()
-        
-        print("\n=== TRYING DIFFERENT QUERIES ===")
-        query_results = self.try_different_instructions_queries()
-        
-        print("\n=== DETAILED AI_LOG.INSTRUCTIONS DEBUG ===")
-        debug_results = self.debug_ai_log_instructions()
-        
-        combined_results = all_results + "\n\n" + "\n".join(query_results) + "\n\n" + debug_results
-        messagebox.showinfo("Supabase Test Results", combined_results)
-        return combined_results
+            error_msg = f"Error testing Supabase connection: {str(e)}"
+            messagebox.showerror("Connection Error", error_msg)
+            return error_msg
 
     def fetch_instructions_from_supabase(self):
         """Fetch instructions from Supabase - try multiple approaches"""
         
-        # Try different approaches to access ai_log.instructions
+        # Try different approaches to access instructions
         approaches = [
-            {
-                "name": "Public schema - instructions table",
-                "headers": {
-                    "apikey": SUPABASE_KEY,
-                    "Content-Type": "application/json"
-                },
-                "url": f"{SUPABASE_URL}/rest/v1/instructions"
-            },
-            {
-                "name": "AI_log schema with Accept-Profile",
-                "headers": {
-                    "apikey": SUPABASE_KEY,
-                    "Content-Type": "application/json",
-                    "Accept-Profile": "ai_log"
-                },
-                "url": f"{SUPABASE_URL}/rest/v1/instructions"
-            },
-            {
-                "name": "Public schema - ai_log_instructions table",
-                "headers": {
-                    "apikey": SUPABASE_KEY,
-                    "Content-Type": "application/json"
-                },
-                "url": f"{SUPABASE_URL}/rest/v1/ai_log_instructions"
-            },
-            {
-                "name": "URL with schema parameter",
-                "headers": {
-                    "apikey": SUPABASE_KEY,
-                    "Content-Type": "application/json"
-                },
-                "url": f"{SUPABASE_URL}/rest/v1/instructions?schema=ai_log"
-            },
-            {
-                "name": "RPC call approach",
-                "headers": {
-                    "apikey": SUPABASE_KEY,
-                    "Content-Type": "application/json"
-                },
-                "url": f"{SUPABASE_URL}/rest/v1/rpc/get_ai_log_instructions"
-            }
+            ("AI_log schema", lambda: supabase.schema("ai_log").table("instructions")),
+            ("Public schema", lambda: supabase.table("instructions")),
+            ("ai_log_instructions table", lambda: supabase.table("ai_log_instructions"))
         ]
         
-        for approach in approaches:
+        for approach_name, table_func in approaches:
             try:
-                print(f"\nTrying: {approach['name']}")
-                print(f"URL: {approach['url']}")
+                print(f"\nTrying: {approach_name}")
                 
-                response = requests.get(
-                    f"{approach['url']}?select=instructions&order=created_at.desc&limit=1",
-                    headers=approach['headers']
-                )
+                # Build the query
+                response = table_func().select("instructions").order("created_at", desc=True).limit(1).execute()
                 
-                print(f"Status: {response.status_code}")
-                print(f"Response: {response.text}")
+                print(f"Response: {response}")
                 
-                if response.status_code == 200:
-                    data = response.json()
-                    if data:
-                        instructions_content = data[0].get('instructions', '')
-                        if instructions_content:
-                            print(f"SUCCESS with {approach['name']}!")
-                            return f"[SUCCESS: {approach['name']}]\n{instructions_content}"
-                        else:
-                            print(f"Empty instructions in {approach['name']}")
+                if response.data is not None and len(response.data) > 0:
+                    instructions_content = response.data[0].get('instructions', '')
+                    if instructions_content:
+                        print(f"SUCCESS with {approach_name}!")
+                        return f"[SUCCESS: {approach_name}]\n{instructions_content}"
                     else:
-                        print(f"No records in {approach['name']}")
+                        print(f"Empty instructions in {approach_name}")
                 else:
-                    print(f"Error {response.status_code} in {approach['name']}")
+                    print(f"No records in {approach_name}")
                     
             except Exception as e:
-                print(f"Exception in {approach['name']}: {str(e)}")
+                print(f"Exception in {approach_name}: {str(e)}")
         
         # If none worked, return error message
         return "Could not fetch instructions from any schema/table combination. Tried:\n" + \
-               "\n".join([f"- {a['name']}" for a in approaches]) + \
+               "\n".join([f"- {name}" for name, _ in approaches]) + \
                "\n\nCheck if ai_log schema exists and has proper permissions."
 
     def fetch_buttons_from_supabase(self):
         """Fetch buttons from Supabase public.buttons table"""
         try:
-            headers = {
-                "apikey": SUPABASE_KEY,
-                "Content-Type": "application/json"
-            }
+            # First try with order by created_at, then fallback to no ordering
+            try:
+                response = supabase.table("button").select("*").order("created_at", desc=True).execute()
+            except:
+                # Fallback: no ordering
+                response = supabase.table("button").select("*").execute()
             
-            response = requests.get(
-                f"{SUPABASE_URL}/rest/v1/button?select=*&order=created_at.desc",
-                headers=headers
-            )
+            print(f"Fetch buttons response: {response}")
             
-            if response.status_code == 200:
-                data = response.json()
-                if data:
+            if response.data is not None:
+                if len(response.data) > 0:
                     buttons_text = ""
-                    for button in data:
+                    for button in response.data:
                         buttons_text += f"ID: {button.get('id', 'N/A')}\n"
                         buttons_text += f"Title: {button.get('title', 'N/A')}\n"
                         buttons_text += f"Action Type: {button.get('action_type', 'N/A')}\n"
@@ -619,9 +431,12 @@ class NiobeAssistantGUI:
                         buttons_text += "-" * 50 + "\n"
                     return buttons_text
                 else:
-                    return "No buttons found in public.buttons table."
+                    return "No buttons found in public.button table."
             else:
-                return f"Error fetching buttons (Status: {response.status_code}): {response.text}"
+                error_message = f"Error fetching buttons: {response}"
+                if hasattr(response, 'error') and response.error:
+                    error_message += f" - Error details: {response.error}"
+                return error_message
                 
         except Exception as e:
             return f"Error connecting to Supabase for buttons: {str(e)}"
