@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Niobe Button Manager</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🤖 Niobe Button Manager</h1>
+            <p>Button ve Training Data Yönetim Paneli</p>
+            <div style="margin-top: 1rem;">
+                <button class="btn btn-success" onclick="uploadTrainingFileToSupabase()">
+                    📤 niobe_training.txt'i Supabase'e Yükle
+                </button>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <!-- Training Data Form -->
+            <div class="card">
+                <h2>Training Data Ekle</h2>
+                <form id="trainingForm">
+                    <div class="form-group">
+                        <label for="training_input">Input Text *</label>
+                        <input type="text" id="training_input" name="input" required placeholder="Örn: Evde Bakım">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="training_description">Description (Output) *</label>
+                        <textarea id="training_description" name="description" required
+                                  placeholder="Örn: Evde bakım modülüne gitmek için aşağıdaki butona tıklayınız." rows="3"></textarea>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="training_action_key">Action Key *</label>
+                            <input type="text" id="training_action_key" name="action_key" required
+                                   placeholder="Button ID (örn: 4a881122)">
+                        </div>
+                        <div class="form-group">
+                            <label style="opacity: 0;">.</label>
+                            <button type="button" class="btn btn-secondary" onclick="generateTrainingUUID()" style="width: 100%;">
+                                🎲 UUID Oluştur
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">
+                            ➕ Training Data Ekle ve Kaydet
+                        </button>
+                        <button type="button" class="btn btn-secondary" onclick="useActionKeyForButton()" id="useActionKeyBtn" style="display:none;">
+                            ⬇️ Bu ID ile Button Oluştur
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Training Output -->
+            <div class="card" id="trainingOutputCard" style="display:none;">
+                <h2>Training Data Çıktısı</h2>
+                <div id="trainingOutput" class="sql-output">
+                    <pre></pre>
+                </div>
+            </div>
+
+            <!-- Button Form -->
+            <div class="card">
+                <h2>Yeni Button Ekle</h2>
+                <form id="buttonForm">
+                    <div class="form-group">
+                        <label for="title">Button Title *</label>
+                        <input type="text" id="title" name="title" required placeholder="Örn: Başkana İlet">
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="action_type">Action Type *</label>
+                            <select id="action_type" name="action_type" required>
+                                <option value="">Seçiniz...</option>
+                                <option value="route">Route</option>
+                                <option value="url">URL</option>
+                                <option value="phone">Phone</option>
+                                <option value="app_store">App Store</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="navigation_type">Navigation Type *</label>
+                            <select id="navigation_type" name="navigation_type" required>
+                                <option value="">Seçiniz...</option>
+                                <option value="push">Push</option>
+                                <option value="go">Go</option>
+                                <option value="pushReplacement">Push Replacement</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="action_value">Action Value *</label>
+                        <input type="text" id="action_value" name="action_value" required
+                               placeholder="Örn: /form/164 veya https://manisa.bel.tr">
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="id">Button ID</label>
+                            <input type="text" id="id" name="id" placeholder="Boş bırakılırsa otomatik oluşturulur">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="order">Order</label>
+                            <input type="number" id="order" name="order" placeholder="0">
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="generateUUID()">
+                            🎲 UUID Oluştur
+                        </button>
+                        <button type="submit" class="btn btn-primary">
+                            ✅ Button Ekle
+                        </button>
+                        <button type="button" class="btn btn-success" onclick="saveCurrentToSupabase()" id="saveSupabaseBtn" style="display:none;">
+                            💾 Supabase'e Kaydet
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- SQL Output -->
+            <div class="card">
+                <h2>SQL Çıktısı</h2>
+                <div id="sqlOutput" class="sql-output">
+                    <p class="placeholder">Button eklendiğinde SQL sorgusu burada görünecek...</p>
+                </div>
+                <button id="copySQL" class="btn btn-secondary" style="display:none;" onclick="copySQLToClipboard()">
+                    📋 SQL'i Kopyala
+                </button>
+            </div>
+
+            <!-- Button List -->
+            <div class="card">
+                <h2>Eklenen Buttonlar</h2>
+                <div id="buttonList" class="button-list">
+                    <p class="placeholder">Henüz button eklenmedi...</p>
+                </div>
+                <button id="exportAllSQL" class="btn btn-primary" style="display:none;" onclick="exportAllSQL()">
+                    📥 Tüm Buttonları SQL Olarak İndir
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let buttons = [];
+        let currentSQL = '';
+        let currentButton = null;
+        let currentTrainingText = '';
+        let lastActionKey = '';
+
+        function generateTrainingUUID() {
+            const uuid = 'xxxxxxxx'.replace(/x/g, () => {
+                return (Math.random() * 16 | 0).toString(16);
+            });
+            document.getElementById('training_action_key').value = uuid;
+            lastActionKey = uuid;
+        }
+
+        function syncActionKeyToButton(actionKey) {
+            if (!actionKey) {
+                return;
+            }
+
+            const idField = document.getElementById('id');
+            idField.value = actionKey;
+
+            idField.style.backgroundColor = '#fef3c7';
+            setTimeout(() => {
+                idField.style.backgroundColor = '';
+            }, 2000);
+        }
+
+        function useActionKeyForButton() {
+            if (!lastActionKey) {
+                showNotification('Önce training data oluşturun!', 'error');
+                return;
+            }
+
+            // Scroll to button form
+            document.getElementById('buttonForm').scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+            // Set the ID field in button form
+            syncActionKeyToButton(lastActionKey);
+
+            showNotification(`Action Key (${lastActionKey}) button formuna eklendi!`, 'success');
+        }
+
+        // Training Form submit handler
+        document.getElementById('trainingForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData(e.target);
+            const actionKey = formData.get('action_key');
+
+            try {
+                const response = await fetch('/add-training', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    lastActionKey = actionKey;
+                    syncActionKeyToButton(actionKey);
+
+                    // Show use button for button form
+                    document.getElementById('useActionKeyBtn').style.display = 'inline-flex';
+
+                    // Reset form
+                    e.target.reset();
+
+                    showNotification(result.message || 'Training data niobe_training.txt dosyasına ve Supabase\'e (ID=1) başarıyla kaydedildi!', 'success');
+                } else {
+                    showNotification('Hata: ' + (result.error || 'Bilinmeyen hata'), 'error');
+                }
+            } catch (error) {
+                showNotification('Hata: ' + error.message, 'error');
+            }
+        });
+
+        async function saveTrainingToFile() {
+            if (!currentTrainingText) {
+                showNotification('Kaydedilecek training data yok!', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/save-training-to-file', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ training_text: currentTrainingText })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showNotification('Training data niobe_training.txt dosyasına kaydedildi! ✅', 'success');
+                    document.getElementById('saveTrainingBtn').style.display = 'none';
+                } else {
+                    showNotification('Dosya hatası: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showNotification('Kayıt hatası: ' + error.message, 'error');
+            }
+        }
+
+        async function saveTrainingToSupabase() {
+            if (!currentTrainingText) {
+                showNotification('Kaydedilecek training data yok!', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/save-training-to-supabase', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ training_text: currentTrainingText })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showNotification('Training data hem dosyaya hem Supabase\'e kaydedildi! ✅', 'success');
+                    document.getElementById('saveTrainingSupabaseBtn').style.display = 'none';
+                    document.getElementById('saveTrainingBtn').style.display = 'none';
+                    currentTrainingText = '';
+                } else {
+                    showNotification('Supabase hatası: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showNotification('Kayıt hatası: ' + error.message, 'error');
+            }
+        }
+
+        // Button Form submit handler
+        document.getElementById('buttonForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData(e.target);
+
+            try {
+                const response = await fetch('/add-button', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    currentButton = result.button;
+                    buttons.push(result.button);
+                    displayButton(result.button);
+                    generateAndDisplaySQL(result.button);
+
+                    // Show Supabase save button
+                    document.getElementById('saveSupabaseBtn').style.display = 'inline-flex';
+
+                    // Reset form
+                    e.target.reset();
+
+                    // Show success message
+                    showNotification('Button oluşturuldu! Supabase\'e kaydetmek için butona tıklayın.', 'success');
+                }
+            } catch (error) {
+                showNotification('Hata: ' + error.message, 'error');
+            }
+        });
+
+        async function saveCurrentToSupabase() {
+            if (!currentButton) {
+                showNotification('Kaydedilecek button yok!', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/save-to-supabase', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(currentButton)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showNotification('Button Supabase\'e başarıyla kaydedildi! ✅', 'success');
+                    document.getElementById('saveSupabaseBtn').style.display = 'none';
+                    currentButton = null;
+                } else {
+                    showNotification('Supabase hatası: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showNotification('Kayıt hatası: ' + error.message, 'error');
+            }
+        }
+
+        async function uploadTrainingFileToSupabase() {
+            if (!confirm('niobe_training.txt dosyasının TÜM içeriğini ai_log.instructions tablosuna yüklemek istediğinize emin misiniz?\n\nBu işlem mevcut veriyi DEĞIŞTIRECEK!')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/upload-training-file-to-supabase', {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showNotification('niobe_training.txt dosyası Supabase ai_log.instructions tablosuna başarıyla yüklendi! ✅', 'success');
+                } else {
+                    showNotification('Yükleme hatası: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showNotification('Bağlantı hatası: ' + error.message, 'error');
+            }
+        }
+
+        function generateUUID() {
+            const uuid = 'xxxxxxxx'.replace(/x/g, () => {
+                return (Math.random() * 16 | 0).toString(16);
+            });
+            document.getElementById('id').value = uuid;
+        }
+
+        function displayButton(button) {
+            const listElement = document.getElementById('buttonList');
+
+            // Remove placeholder
+            if (buttons.length === 1) {
+                listElement.innerHTML = '';
+                document.getElementById('exportAllSQL').style.display = 'block';
+            }
+
+            const buttonCard = document.createElement('div');
+            buttonCard.className = 'button-card';
+            buttonCard.innerHTML = `
+                <div class="button-card-header">
+                    <h3>${button.title}</h3>
+                    <span class="button-id">ID: ${button.id}</span>
+                </div>
+                <div class="button-card-body">
+                    <div class="button-info">
+                        <span class="label">Action Type:</span>
+                        <span class="value">${button.action_type}</span>
+                    </div>
+                    <div class="button-info">
+                        <span class="label">Navigation:</span>
+                        <span class="value">${button.navigation_type}</span>
+                    </div>
+                    <div class="button-info">
+                        <span class="label">Action Value:</span>
+                        <span class="value">${button.action_value}</span>
+                    </div>
+                    <div class="button-info">
+                        <span class="label">Order:</span>
+                        <span class="value">${button.order !== null ? button.order : 'NULL'}</span>
+                    </div>
+                </div>
+            `;
+
+            listElement.appendChild(buttonCard);
+        }
+
+        function generateAndDisplaySQL(button) {
+            const orderValue = button.order !== null && button.order !== undefined ? button.order : 'NULL';
+
+            const sql = `INSERT INTO public.button (id, title, action_type, navigation_type, action_value, "order", updated_at)
+VALUES (
+    '${escapeSQLString(button.id)}',
+    '${escapeSQLString(button.title)}',
+    '${escapeSQLString(button.action_type)}',
+    '${escapeSQLString(button.navigation_type)}',
+    '${escapeSQLString(button.action_value)}',
+    ${orderValue},
+    '${button.updated_at}'
+);`;
+
+            currentSQL = sql;
+
+            const outputElement = document.getElementById('sqlOutput');
+            outputElement.innerHTML = `<pre>${sql}</pre>`;
+            document.getElementById('copySQL').style.display = 'block';
+        }
+
+        function escapeSQLString(str) {
+            return str.replace(/'/g, "''");
+        }
+
+        function copySQLToClipboard() {
+            navigator.clipboard.writeText(currentSQL).then(() => {
+                showNotification('SQL panoya kopyalandı!', 'success');
+            }).catch(err => {
+                showNotification('Kopyalama hatası: ' + err, 'error');
+            });
+        }
+
+        function exportAllSQL() {
+            let allSQL = '-- Tüm Buttonlar için SQL INSERT Statements\n';
+            allSQL += '-- Oluşturulma Tarihi: ' + new Date().toLocaleString('tr-TR') + '\n\n';
+
+            buttons.forEach(button => {
+                const orderValue = button.order !== null && button.order !== undefined ? button.order : 'NULL';
+                allSQL += `INSERT INTO public.button (id, title, action_type, navigation_type, action_value, "order", updated_at)
+VALUES (
+    '${escapeSQLString(button.id)}',
+    '${escapeSQLString(button.title)}',
+    '${escapeSQLString(button.action_type)}',
+    '${escapeSQLString(button.navigation_type)}',
+    '${escapeSQLString(button.action_value)}',
+    ${orderValue},
+    '${button.updated_at}'
+);
+
+`;
+            });
+
+            // Download as file
+            const blob = new Blob([allSQL], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `buttons_export_${Date.now()}.sql`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+
+            showNotification('SQL dosyası indirildi!', 'success');
+        }
+
+        function showNotification(message, type) {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.classList.add('show');
+            }, 10);
+
+            setTimeout(() => {
+                notification.classList.remove('show');
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
